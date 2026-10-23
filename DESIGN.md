@@ -58,7 +58,7 @@ route covers any collection.
 
 | Path | Work | State |
 |---|---|---|
-| **Posts** | Match configured keywords **or** languages; on a match, check for a tombstone, then alert with URI, author DID and matched rule, **never the text** | Stateless: scales by adding pods |
+| **Posts** | Match configured keywords (whole words) **or** languages; on a match, check for a tombstone, then alert with URI, author DID and matched rule, **never the text** | Stateless: scales by adding pods |
 | **Likes** (likes + reposts) | One combined engagement count per target post over a rolling window; alert once when it crosses a threshold. Window and threshold are config | **Stateful**: one pod, counts in memory |
 | **Deletes** | Write a tombstone (hashed record URI) to KV with a TTL ≥ the posts buffer | Stateless |
 

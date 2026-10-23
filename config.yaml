@@ -27,7 +27,7 @@ workers:
   posts:
     process_delay: 0s # slow-path demo: sleep per message
     keywords: [golang, kubernetes, nats]
-    languages: [en]
+    languages: [fr] # en is ~64% of posts (~34 alerts/s); fr is ~1.5/s
 
   likes:
     process_delay: 0s

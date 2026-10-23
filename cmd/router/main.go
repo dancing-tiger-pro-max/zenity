@@ -14,6 +14,7 @@ import (
 	"bskyrouter/internal/config"
 	"bskyrouter/internal/handlers"
 	"bskyrouter/internal/ingest"
+	"bskyrouter/internal/notify"
 	"bskyrouter/internal/router"
 	"bskyrouter/internal/worker"
 )
@@ -114,6 +115,18 @@ func runWorker(ctx context.Context, cfg config.Config, pathType string, log *slo
 		Log:        log,
 	}
 	switch pathType {
+	case "posts":
+		tombstones, err := broker.NewTombstones(ctx, js)
+		if err != nil {
+			return err
+		}
+		w.Stream, w.ProcessDelay = broker.StreamPosts, cfg.Workers.Posts.ProcessDelay
+		w.Handler = &handlers.Posts{
+			Keywords:   cfg.Workers.Posts.Keywords,
+			Languages:  cfg.Workers.Posts.Languages,
+			Tombstones: tombstones,
+			Notifier:   notify.Log{Logger: log},
+		}
 	case "deletes":
 		tombstones, err := broker.NewTombstones(ctx, js)
 		if err != nil {
