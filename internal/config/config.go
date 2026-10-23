@@ -139,6 +139,9 @@ func (c Config) validate() error {
 		check(strings.TrimSpace(k) != "", "workers.posts.keywords contains an empty keyword")
 	}
 	check(w.Likes.Window > 0, "workers.likes.window must be > 0")
+	check(w.AckWait < w.Likes.Window,
+		"workers.ack_wait (%s) must be shorter than workers.likes.window (%s): likes redelivered after a crash would arrive too late to count",
+		w.AckWait, w.Likes.Window)
 	check(w.Likes.Threshold > 0, "workers.likes.threshold must be > 0")
 	check(w.Deletes.TombstoneTTL >= c.Streams.Posts.MaxAge,
 		"workers.deletes.tombstone_ttl (%s) must be >= streams.posts.max_age (%s): the posts worker can lag up to its full buffer",

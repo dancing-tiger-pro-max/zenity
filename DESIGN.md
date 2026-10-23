@@ -114,7 +114,8 @@ At-least-once, end to end.
   isn't unique: one commit can write several records, such as a thread. Found on the live feed while building.)
   The likes worker dedupes deliveries by URI; every alert has a deterministic ID so receivers can drop repeats.
 - **Failures:** a handler error is retried with backoff up to 5 deliveries, then the message is moved to `DLQ` and
-  acked. A panic counts as a failed attempt. Workers ack only after the handler (including `Notify`) returns.
+  acked. A panic counts as a failed attempt. NATS's own delivery limit is set to twice that, as a backstop: if the
+  dead-letter publish itself fails, the message is still redelivered rather than silently given up on. Workers ack only after the handler (including `Notify`) returns.
 - **Shutdown:** the ingester drains in-flight publishes and saves the cursor; workers finish and ack the current
   message.
 
@@ -154,7 +155,8 @@ At-least-once, end to end.
 
 - Jetstream v1 (`jetstream2.us-east`, named in the brief) with its `time_us` cursor; v2 hosts use a sequence cursor.
 - Notifications are simulated as log lines. Alert receivers are expected to dedupe by alert ID.
-- Engagement alerts fire once per crossing; re-alerting rules are left open.
+- Engagement alerts fire once per burst: a target alerts again only after its likes have fully left the window.
+  Smarter re-alerting (cooldowns, hysteresis) is left open.
 - Demo window and threshold are small so alerts appear while watching; production values come from whoever consumes
   the alerts.
 - Measured traffic: ~460–490 events/s (60s sample on 2026-10-23: likes 65%, reposts 11.5%, posts 11.5%, deletes 3%, unrouted 9% mostly follows). It varies through the day.

@@ -68,10 +68,13 @@ const statsEvery = 10 * time.Second
 // messages between them.
 func (w *Worker) Run(ctx context.Context) error {
 	cons, err := w.JS.CreateOrUpdateConsumer(ctx, w.Stream, jetstream.ConsumerConfig{
-		Durable:       w.Name,
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		AckWait:       w.AckWait,
-		MaxDeliver:    w.MaxDeliver,
+		Durable:   w.Name,
+		AckPolicy: jetstream.AckExplicitPolicy,
+		AckWait:   w.AckWait,
+		// Our code dead-letters at MaxDeliver. NATS's own limit is a backstop
+		// set higher: if the dead-letter publish fails on the last attempt, the
+		// message must still be redelivered, not silently given up on.
+		MaxDeliver:    2 * w.MaxDeliver,
 		MaxAckPending: 256,
 	})
 	if err != nil {

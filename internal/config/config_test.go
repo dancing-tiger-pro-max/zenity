@@ -31,6 +31,7 @@ func TestValidateCrossFieldRules(t *testing.T) {
 		{"delay longer than ack wait", "process_delay: 0s", "process_delay: 1m", "process_delay"},
 		{"dedupe window shorter than cursor interval", "duplicates_window: 2m", "duplicates_window: 500ms", "duplicates_window"},
 		{"unknown key", "threshold: 20", "treshold: 20", "treshold"},
+		{"ack wait longer than likes window", "ack_wait: 30s", "ack_wait: 2m", "ack_wait"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
