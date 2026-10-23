@@ -23,6 +23,7 @@ type Jetstream struct {
 	URL            string        `yaml:"url"`
 	CursorInterval time.Duration `yaml:"cursor_interval"` // how often the cursor is saved
 	MaxPending     int           `yaml:"max_pending"`     // unconfirmed publishes in flight
+	PublishTimeout time.Duration `yaml:"publish_timeout"` // an unconfirmed publish after this is an error
 }
 
 type NATS struct {
@@ -105,6 +106,7 @@ func (c Config) validate() error {
 	check(c.Jetstream.URL != "", "jetstream.url is required")
 	check(c.Jetstream.CursorInterval > 0, "jetstream.cursor_interval must be > 0")
 	check(c.Jetstream.MaxPending > 0, "jetstream.max_pending must be > 0")
+	check(c.Jetstream.PublishTimeout > 0, "jetstream.publish_timeout must be > 0")
 	check(c.NATS.URL != "", "nats.url is required")
 
 	check(c.Streams.DuplicatesWindow > c.Jetstream.CursorInterval,

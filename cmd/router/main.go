@@ -54,14 +54,32 @@ func run(role, configPath string, dryRun bool, log *slog.Logger) error {
 	case "setup":
 		return setup(ctx, cfg, log)
 	case "ingester":
-		if !dryRun {
-			return fmt.Errorf("publishing to NATS isn't built yet; run with --dry-run")
-		}
-		in := &ingest.Ingester{URL: cfg.Jetstream.URL, Routes: router.Table, DryRun: dryRun, Log: log}
-		return in.Run(ctx)
+		return runIngester(ctx, cfg, dryRun, log)
 	default:
 		return fmt.Errorf("unknown --role %q", role)
 	}
+}
+
+func runIngester(ctx context.Context, cfg config.Config, dryRun bool, log *slog.Logger) error {
+	in := &ingest.Ingester{
+		URL:        cfg.Jetstream.URL,
+		Routes:     router.Table,
+		MaxPending: cfg.Jetstream.MaxPending,
+		DryRun:     dryRun,
+		Log:        log,
+	}
+	if !dryRun {
+		nc, js, err := broker.ConnectPublisher(cfg.NATS.URL, cfg.Jetstream.MaxPending, cfg.Jetstream.PublishTimeout)
+		if err != nil {
+			return err
+		}
+		defer nc.Close()
+		if err := broker.Ensure(ctx, js, cfg); err != nil {
+			return err
+		}
+		in.JS = js
+	}
+	return in.Run(ctx)
 }
 
 // setup creates the streams and KV buckets and exits. Every role also does

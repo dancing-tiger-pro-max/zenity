@@ -91,7 +91,8 @@ What keeps loss rare and visible:
 - Streams keep processed messages (limits retention) so likes can replay. The monitor therefore warns when a stream
   is near its limit **and** ≥80% of it is unprocessed, meaning eviction is about to reach unread messages.
 - If eviction passes a consumer's position, the monitor reports `events lost: N` for that path only.
-- On a laptop `MaxBytes` sets the buffer (about an hour or two); 24h is the production target.
+- On a laptop `MaxBytes` sets the buffer: measured ~5h for posts (1GB), ~2.4h for likes (2GB), ~13h for deletes;
+  24h is the production target (the full firehose is ~28GB/day).
 
 The slow-path demo: set `process_delay` on likes and only LIKES' lag grows (`nats consumer report`) while posts
 and deletes stay at zero.
@@ -102,12 +103,14 @@ At-least-once, end to end.
 - **Ingest:** async publish with at most 256 unconfirmed messages in flight. Live traffic is ~500/s but catch-up
   after an outage replays at ~2.7k/s, and waiting on each ack caps out near 2k/s. The **cursor** (last `time_us` whose
   every earlier event is confirmed stored) is written to NATS KV every ~1s and on shutdown. It fails together with
-  the broker, so the two can never disagree. If NATS is down the ingester stops reading; Jetstream's ~36h history
-  is the buffer.
+  the broker, so the two can never disagree. If NATS is down, a publish not confirmed within `publish_timeout`
+  stops the ingester, which resumes from the cursor; Jetstream's ~36h history is the buffer. An event over NATS's
+  1MB message limit is skipped and counted, never retried forever.
 - **Resume:** reconnect from the cursor. Verified live: an older cursor is silently clamped to ~36h, so the ingester
   compares its cursor with the first event received and logs a gap.
-- **Dedupe:** NATS drops repeat message IDs (`did:time_us`) within 2 minutes; the likes worker dedupes deliveries by
-  URI; every alert has a deterministic ID so receivers can drop repeats.
+- **Dedupe:** NATS drops repeat message IDs (`did:time_us:collection:rkey`) within 2 minutes. (`did:time_us` alone
+  isn't unique: one commit can write several records, such as a thread. Found on the live feed while building.)
+  The likes worker dedupes deliveries by URI; every alert has a deterministic ID so receivers can drop repeats.
 - **Failures:** a handler error is retried with backoff up to 5 deliveries, then the message is moved to `DLQ` and
   acked. A panic counts as a failed attempt. Workers ack only after the handler (including `Notify`) returns.
 - **Shutdown:** the ingester drains in-flight publishes and saves the cursor; workers finish and ack the current

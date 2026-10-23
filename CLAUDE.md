@@ -23,6 +23,11 @@ type through NATS JetStream, and fans out to independent worker Deployments on a
 
 ## Code rules
 - Never log or emit post text. Alerts carry only URIs, DIDs and the matched rule.
+- Never block on a channel, future or network call without also watching for shutdown (`ctx.Done()` or a done
+  channel) and, for calls to NATS or Jetstream, a timeout. A silent freeze is worse than a crash: Kubernetes
+  restarts a crash, but a frozen pod looks healthy.
+- Verify behavior against the live feed, not just assumptions: watch counters that shouldn't move.
+- A regression test must be shown to fail with the bug put back, and pass reliably with the fix.
 - Layout: `cmd/router` (one binary, `--role`), packages under `internal/` (config, event, router, ingest, broker,
   worker, handlers, notify, monitor), manifests in `deploy/`.
 - Each path only implements `Handle(ctx, event) error`; delivery mechanics (fetch, delay, ack, retry, dead-letter)

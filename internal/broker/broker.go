@@ -29,7 +29,7 @@ const (
 )
 
 // Connect opens a NATS connection that keeps reconnecting on its own.
-func Connect(url, name string) (*nats.Conn, jetstream.JetStream, error) {
+func Connect(url, name string, opts ...jetstream.JetStreamOpt) (*nats.Conn, jetstream.JetStream, error) {
 	nc, err := nats.Connect(url,
 		nats.Name(name),
 		nats.MaxReconnects(-1),
@@ -38,12 +38,21 @@ func Connect(url, name string) (*nats.Conn, jetstream.JetStream, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect nats %s: %w", url, err)
 	}
-	js, err := jetstream.New(nc)
+	js, err := jetstream.New(nc, opts...)
 	if err != nil {
 		nc.Close()
 		return nil, nil, fmt.Errorf("jetstream: %w", err)
 	}
 	return nc, js, nil
+}
+
+// ConnectPublisher connects for the ingester. The async publish timeout is
+// essential: without it, a publish to an unreachable NATS never resolves and
+// the ingester freezes silently instead of failing and resuming from its cursor.
+func ConnectPublisher(url string, maxPending int, publishTimeout time.Duration) (*nats.Conn, jetstream.JetStream, error) {
+	return Connect(url, "ingester",
+		jetstream.WithPublishAsyncMaxPending(maxPending),
+		jetstream.WithPublishAsyncTimeout(publishTimeout))
 }
 
 // Ensure creates or updates every stream and KV bucket to match cfg.

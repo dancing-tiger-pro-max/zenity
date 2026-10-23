@@ -59,7 +59,13 @@ func (e Event) URI() string {
 	return fmt.Sprintf("at://%s/%s/%s", e.DID, e.Commit.Collection, e.Commit.RKey)
 }
 
-// MsgID identifies the event for broker-side deduplication.
+// MsgID identifies the event for broker-side deduplication. did:time_us alone
+// is not unique: one commit can write several records (a thread, or a post with
+// its threadgate) and they share both, so the record's collection and rkey are
+// part of the ID.
 func (e Event) MsgID() string {
-	return fmt.Sprintf("%s:%d", e.DID, e.TimeUS)
+	if e.Commit == nil {
+		return fmt.Sprintf("%s:%d:%s", e.DID, e.TimeUS, e.Kind)
+	}
+	return fmt.Sprintf("%s:%d:%s:%s", e.DID, e.TimeUS, e.Commit.Collection, e.Commit.RKey)
 }

@@ -1,15 +1,19 @@
 // Package ingest holds the single Jetstream connection, routes each event and
-// hands it on. In dry-run mode it only counts where events would go.
+// publishes it to NATS. In dry-run mode it only counts where events would go.
 package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"bskyrouter/internal/event"
 	"bskyrouter/internal/router"
@@ -18,14 +22,30 @@ import (
 const statsEvery = 5 * time.Second
 
 type Ingester struct {
-	URL    string
-	Routes []router.Route
-	DryRun bool
-	Log    *slog.Logger
+	URL        string
+	Routes     []router.Route
+	JS         jetstream.JetStream // nil in dry-run
+	MaxPending int
+	DryRun     bool
+	Log        *slog.Logger
+
+	// confirmedUS is the time_us of the newest event for which it and every
+	// earlier event is either stored in NATS or deliberately dropped. It's the
+	// only safe resume point.
+	confirmedUS atomic.Int64
+	stats       stats
 }
 
-// Run connects to Jetstream and processes events until ctx is cancelled or the
-// connection fails.
+// inflight is one event waiting for its publish ack. fut is nil for events
+// that weren't published (unrouted, or dry-run): they're done immediately, but
+// still queued so the confirmed point only moves in order.
+type inflight struct {
+	timeUS int64
+	fut    jetstream.PubAckFuture
+}
+
+// Run connects to Jetstream and processes events until ctx is cancelled or
+// the connection or a publish fails.
 func (in *Ingester) Run(ctx context.Context) error {
 	u, err := subscribeURL(in.URL, router.WantedCollections(in.Routes))
 	if err != nil {
@@ -39,11 +59,16 @@ func (in *Ingester) Run(ctx context.Context) error {
 	defer conn.CloseNow()
 	conn.SetReadLimit(1 << 22) // a few posts carry large records
 
-	s := newStats()
+	in.stats.reset()
 	tick := time.NewTicker(statsEvery)
 	defer tick.Stop()
 
-	msgs := make(chan []byte, 256)
+	// done stops the helper goroutines when Run returns, so no send below can
+	// block forever.
+	done := make(chan struct{})
+	defer close(done)
+
+	msgs := make(chan []byte, in.MaxPending)
 	readErr := make(chan error, 1)
 	go func() {
 		for {
@@ -52,9 +77,21 @@ func (in *Ingester) Run(ctx context.Context) error {
 				readErr <- err
 				return
 			}
-			msgs <- raw
+			select {
+			case msgs <- raw:
+			case <-done:
+				return
+			}
 		}
 	}()
+
+	// The acker drains acks in publish order. Its queue is bounded, and the
+	// NATS client caps unconfirmed publishes at MaxPending: if NATS stops
+	// answering, publishing blocks and we stop reading from Jetstream. A publish
+	// not confirmed within the publish timeout fails, and Run returns.
+	queue := make(chan inflight, in.MaxPending)
+	ackErr := make(chan error, 1)
+	go in.ack(queue, ackErr, done)
 
 	for {
 		select {
@@ -63,24 +100,92 @@ func (in *Ingester) Run(ctx context.Context) error {
 			return nil
 		case err := <-readErr:
 			return fmt.Errorf("read jetstream: %w", err)
+		case err := <-ackErr:
+			return fmt.Errorf("publish not confirmed: %w", err)
 		case <-tick.C:
-			s.log(in.Log)
+			in.logStats()
 		case raw := <-msgs:
-			e, err := event.Parse(raw)
+			item, err := in.handle(ctx, raw)
 			if err != nil {
-				s.parseErrors++
-				continue
+				return err
 			}
-			s.lastTimeUS = e.TimeUS
-			subject, ok := router.Match(in.Routes, e)
-			if !ok {
-				s.unrouted++
-				continue
+			select {
+			case queue <- item:
+			case <-ctx.Done():
+				return nil
+			case err := <-ackErr:
+				return fmt.Errorf("publish not confirmed: %w", err)
 			}
-			s.routed[subject]++
 		}
 	}
 }
+
+// handle parses, routes and (unless dry-run) publishes one raw event.
+func (in *Ingester) handle(ctx context.Context, raw []byte) (inflight, error) {
+	e, err := event.Parse(raw)
+	if err != nil {
+		in.stats.parseErrors.Add(1)
+		return inflight{}, nil // timeUS 0: doesn't move the confirmed point
+	}
+	in.stats.lastSeenUS.Store(e.TimeUS)
+
+	subject, ok := router.Match(in.Routes, e)
+	if !ok {
+		in.stats.unrouted.Add(1)
+		return inflight{timeUS: e.TimeUS}, nil
+	}
+	in.stats.routed(subject)
+	if in.DryRun {
+		return inflight{timeUS: e.TimeUS}, nil
+	}
+
+	msg := &nats.Msg{Subject: subject, Data: raw}
+	fut, err := in.JS.PublishMsgAsync(msg, jetstream.WithMsgID(e.MsgID()))
+	if errors.Is(err, nats.ErrMaxPayload) {
+		// Failing here would retry the same event forever after every restart.
+		// Skip it, but never silently.
+		in.stats.oversized.Add(1)
+		in.Log.Warn("event too large for NATS, skipped", "uri", e.URI(), "subject", subject, "bytes", len(raw))
+		return inflight{timeUS: e.TimeUS}, nil
+	}
+	if err != nil {
+		return inflight{}, fmt.Errorf("publish %s: %w", subject, err)
+	}
+	return inflight{timeUS: e.TimeUS, fut: fut}, nil
+}
+
+// ack waits for each publish ack in order and advances the confirmed point.
+func (in *Ingester) ack(queue <-chan inflight, errs chan<- error, done <-chan struct{}) {
+	for {
+		var item inflight
+		select {
+		case item = <-queue:
+		case <-done:
+			return
+		}
+		if item.fut != nil {
+			select {
+			case ack := <-item.fut.Ok():
+				if ack.Duplicate {
+					in.stats.duplicates.Add(1)
+				} else {
+					in.stats.stored.Add(1)
+				}
+			case err := <-item.fut.Err():
+				errs <- err
+				return
+			case <-done:
+				return
+			}
+		}
+		if item.timeUS > 0 {
+			in.confirmedUS.Store(item.timeUS)
+		}
+	}
+}
+
+// ConfirmedUS is the newest safe resume point (0 until the first event is confirmed).
+func (in *Ingester) ConfirmedUS() int64 { return in.confirmedUS.Load() }
 
 func subscribeURL(base string, collections []string) (string, error) {
 	u, err := url.Parse(base)
@@ -93,33 +198,4 @@ func subscribeURL(base string, collections []string) (string, error) {
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
-}
-
-type stats struct {
-	routed      map[string]int
-	unrouted    int
-	parseErrors int
-	lastTimeUS  int64
-	since       time.Time
-}
-
-func newStats() *stats { return &stats{routed: map[string]int{}, since: time.Now()} }
-
-// log writes one line for the interval and resets the counters.
-func (s *stats) log(l *slog.Logger) {
-	total := s.unrouted + s.parseErrors
-	attrs := []any{}
-	for subject, n := range s.routed {
-		total += n
-		attrs = append(attrs, subject, n)
-	}
-	secs := time.Since(s.since).Seconds()
-	attrs = append(attrs,
-		"unrouted", s.unrouted,
-		"parse_errors", s.parseErrors,
-		"events_per_sec", int(float64(total)/secs),
-		"ingest_lag_ms", time.Since(time.UnixMicro(s.lastTimeUS)).Milliseconds(),
-	)
-	l.Info("ingest stats", attrs...)
-	*s = stats{routed: map[string]int{}, since: time.Now(), lastTimeUS: s.lastTimeUS}
 }

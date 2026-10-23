@@ -11,7 +11,7 @@ func (c Config) Summary() string {
 	p := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
 	p("config OK")
-	p("  jetstream  %s (cursor every %s, max %d in flight)", c.Jetstream.URL, c.Jetstream.CursorInterval, c.Jetstream.MaxPending)
+	p("  jetstream  %s (cursor every %s, max %d in flight, publish timeout %s)", c.Jetstream.URL, c.Jetstream.CursorInterval, c.Jetstream.MaxPending, c.Jetstream.PublishTimeout)
 	p("  nats       %s", c.NATS.URL)
 	p("  streams    dedupe window %s", c.Streams.DuplicatesWindow)
 	for _, s := range []struct {
