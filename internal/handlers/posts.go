@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -39,6 +40,9 @@ type postRecord struct {
 }
 
 func (p *Posts) Handle(ctx context.Context, e event.Event) error {
+	if e.Commit == nil || e.Commit.RKey == "" {
+		return worker.Permanent(errors.New("post event without a commit or rkey"))
+	}
 	var rec postRecord
 	if err := json.Unmarshal(e.Commit.Record, &rec); err != nil {
 		return worker.Permanent(fmt.Errorf("post record: %w", err))

@@ -4,9 +4,11 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"bskyrouter/internal/event"
+	"bskyrouter/internal/worker"
 )
 
 // TombstoneWriter is what the deletes path needs from the tombstone store.
@@ -25,6 +27,9 @@ type Deletes struct {
 }
 
 func (d *Deletes) Handle(ctx context.Context, e event.Event) error {
+	if e.Commit == nil || e.Commit.RKey == "" {
+		return worker.Permanent(errors.New("delete event without a commit or rkey"))
+	}
 	if err := d.Tombstones.Put(ctx, e.URI(), e.Collection(), e.TimeUS); err != nil {
 		return err // retried by the worker
 	}

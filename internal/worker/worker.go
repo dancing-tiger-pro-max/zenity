@@ -51,6 +51,7 @@ type Worker struct {
 	Log          *slog.Logger
 
 	processed, retried, deadLettered atomic.Int64
+	redeliveries                     atomic.Int64 // messages received that were delivered before
 	lastEventUS                      atomic.Int64
 }
 
@@ -102,6 +103,14 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) process(ctx context.Context, msg jetstream.Msg) {
+	attempt := uint64(1)
+	if md, err := msg.Metadata(); err == nil {
+		attempt = md.NumDelivered
+	}
+	if attempt > 1 {
+		w.redeliveries.Add(1)
+	}
+
 	err := w.handle(ctx, msg.Data())
 	if err == nil {
 		w.processed.Add(1)
@@ -111,10 +120,6 @@ func (w *Worker) process(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	attempt := uint64(1)
-	if md, mdErr := msg.Metadata(); mdErr == nil {
-		attempt = md.NumDelivered
-	}
 	var permanent permanentError
 	if errors.As(err, &permanent) || attempt >= uint64(w.MaxDeliver) {
 		w.deadLetter(ctx, msg, err, attempt)
@@ -181,6 +186,7 @@ func (w *Worker) logStats(ctx context.Context) {
 				"processed", n,
 				"per_sec", int(float64(n) / now.Sub(last).Seconds()),
 				"retried", w.retried.Swap(0),
+				"redeliveries", w.redeliveries.Swap(0),
 				"dead_lettered", w.deadLettered.Swap(0),
 				"event_lag_ms", msSince(w.lastEventUS.Load()),
 			}
