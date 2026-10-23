@@ -43,7 +43,7 @@ runnable and checked before the next.
 ## Where it helped
 - Laying out options with honest costs, and explaining unfamiliar Go, NATS and Kubernetes concepts through Node.js
   equivalents.
-- Verifying instead of assuming: it connected to the live feed to measure traffic (~490 events/s), confirm that an
+- Verifying instead of assuming: it connected to the live feed to measure traffic (~460–490 events/s), confirm that an
   old cursor is silently clamped to ~36h, and measure the catch-up rate that justified async publishing.
 - Cross-checking decisions against each other when one changed.
 

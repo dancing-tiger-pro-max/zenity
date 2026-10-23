@@ -66,7 +66,7 @@ These three cover a stateless path, a stateful one, and routing on a different k
 repeat the likes pattern, so it's described, not built.
 
 - **Why likes is one pod:** a count needs every like for a post in one place; two pods would each see about half.
-  Measured traffic is ~400 likes+reposts/s, a fraction of one pod's capacity, so one pod is both exact and enough.
+  Measured traffic is ~350 likes+reposts/s, a fraction of one pod's capacity, so one pod is both exact and enough.
 - **Exact counts:** the window uses each event's own `time_us`, not the clock, so a lagging worker still counts
   correctly. Likes are deduped by URI. On restart the pod silently re-reads one window before its consumer's
   position, then continues; no duplicate alerts.
@@ -152,4 +152,4 @@ At-least-once, end to end.
 - Engagement alerts fire once per crossing; re-alerting rules are left open.
 - Demo window and threshold are small so alerts appear while watching; production values come from whoever consumes
   the alerts.
-- Measured on 2026-10-22: ~490 events/s (likes 66%, reposts 12%, posts 10%, follows 8%, deletes under 1%).
+- Measured traffic: ~460–490 events/s (60s sample on 2026-10-23: likes 65%, reposts 11.5%, posts 11.5%, deletes 3%, unrouted 9% mostly follows). It varies through the day.

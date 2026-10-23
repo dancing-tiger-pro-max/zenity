@@ -1,0 +1,2 @@
+jetstream:
+  url: wss://jetstream2.us-east.bsky.network/subscribe
