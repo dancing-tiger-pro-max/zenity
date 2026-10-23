@@ -1,0 +1,161 @@
+# One Deployment per role, all from the same image. Each path can be scaled,
+# restarted or slowed on its own. Settings come from the router-config
+# ConfigMap (built from config.yaml by `make config`).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingester
+  namespace: bsky-router
+spec:
+  replicas: 1
+  # Never two at once: one Jetstream connection, one cursor.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: ingester }
+  template:
+    metadata:
+      labels: { app: ingester }
+    spec:
+      containers:
+        - name: router
+          image: bsky-router:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--role=ingester"]
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/router }
+      volumes:
+        - { name: config, configMap: { name: router-config } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-posts
+  namespace: bsky-router
+spec:
+  replicas: 1 # stateless: scale freely
+  selector:
+    matchLabels: { app: worker-posts }
+  template:
+    metadata:
+      labels: { app: worker-posts }
+    spec:
+      containers:
+        - name: router
+          image: bsky-router:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--role=worker", "--type=posts"]
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/router }
+      volumes:
+        - { name: config, configMap: { name: router-config } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-likes
+  namespace: bsky-router
+spec:
+  # Stateful: counts live in memory, so exactly one pod. Recreate makes sure an
+  # update never runs two at once (they'd split the counts).
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: worker-likes }
+  template:
+    metadata:
+      labels: { app: worker-likes }
+    spec:
+      containers:
+        - name: router
+          image: bsky-router:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--role=worker", "--type=likes"]
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/router }
+      volumes:
+        - { name: config, configMap: { name: router-config } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-deletes
+  namespace: bsky-router
+spec:
+  replicas: 1 # stateless: scale freely
+  selector:
+    matchLabels: { app: worker-deletes }
+  template:
+    metadata:
+      labels: { app: worker-deletes }
+    spec:
+      containers:
+        - name: router
+          image: bsky-router:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--role=worker", "--type=deletes"]
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/router }
+      volumes:
+        - { name: config, configMap: { name: router-config } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitor
+  namespace: bsky-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: monitor }
+  template:
+    metadata:
+      labels: { app: monitor }
+    spec:
+      containers:
+        - name: router
+          image: bsky-router:dev
+          imagePullPolicy: IfNotPresent
+          args: ["--role=monitor"]
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 64Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/router }
+      volumes:
+        - { name: config, configMap: { name: router-config } }
+---
+# Toolbox with the nats CLI, for humans: `make lag`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats-box
+  namespace: bsky-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: nats-box }
+  template:
+    metadata:
+      labels: { app: nats-box }
+    spec:
+      containers:
+        - name: nats-box
+          image: natsio/nats-box:0.18.0
+          command: ["sleep", "infinity"]
+          env:
+            - { name: NATS_URL, value: "nats://nats:4222" }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
