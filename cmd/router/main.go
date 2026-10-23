@@ -12,6 +12,7 @@ import (
 
 	"bskyrouter/internal/broker"
 	"bskyrouter/internal/config"
+	"bskyrouter/internal/engagement"
 	"bskyrouter/internal/handlers"
 	"bskyrouter/internal/ingest"
 	"bskyrouter/internal/notify"
@@ -126,6 +127,13 @@ func runWorker(ctx context.Context, cfg config.Config, pathType string, log *slo
 			Languages:  cfg.Workers.Posts.Languages,
 			Tombstones: tombstones,
 			Notifier:   notify.Log{Logger: log},
+		}
+	case "likes":
+		w.Stream, w.ProcessDelay = broker.StreamLikes, cfg.Workers.Likes.ProcessDelay
+		w.Handler = &handlers.Likes{
+			Window:   engagement.New(cfg.Workers.Likes.Window, cfg.Workers.Likes.Threshold),
+			Notifier: notify.Log{Logger: log},
+			Log:      log,
 		}
 	case "deletes":
 		tombstones, err := broker.NewTombstones(ctx, js)

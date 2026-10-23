@@ -25,6 +25,12 @@ type Handler interface {
 	Handle(ctx context.Context, e event.Event) error
 }
 
+// Preparer is optionally implemented by a Handler that must do something
+// before consuming starts, such as rebuilding in-memory state.
+type Preparer interface {
+	Prepare(ctx context.Context, js jetstream.JetStream, stream string, cons jetstream.Consumer) error
+}
+
 // StatsReporter is optionally implemented by a Handler to add path-specific
 // counters to the periodic stats line.
 type StatsReporter interface {
@@ -70,6 +76,11 @@ func (w *Worker) Run(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("consumer %s on %s: %w", w.Name, w.Stream, err)
+	}
+	if p, ok := w.Handler.(Preparer); ok {
+		if err := p.Prepare(ctx, w.JS, w.Stream, cons); err != nil {
+			return fmt.Errorf("prepare %s: %w", w.Name, err)
+		}
 	}
 	iter, err := cons.Messages(jetstream.PullMaxMessages(64))
 	if err != nil {
