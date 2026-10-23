@@ -7,29 +7,34 @@ behind it, the alternatives weighed, what was verified, and the path to producti
 
 ```mermaid
 flowchart LR
-    BS["Bluesky Jetstream<br/>(1 WebSocket, ~500 ev/s)"] --> ING[ingester]
-    ING -->|"routing table → subject"| NATS
-    subgraph NATS["NATS JetStream (persistent disk)"]
-        SP[(POSTS)]
-        SL[(LIKES)]
-        SD[(DELETES)]
-        DLQ[(DLQ)]
-        KV[("KV: cursor, tombstones")]
+    BS["Bluesky Jetstream<br/>1 WebSocket, ~500 ev/s"] --> ING["ingester<br/>routing table"]
+
+    subgraph P1["posts path"]
+        SP[("POSTS stream")] --> WP["worker-posts<br/>stateless, N pods"]
     end
-    SP --> WP["worker-posts<br/>stateless, N pods"]
-    SL --> WL["worker-likes<br/>stateful, 1 pod"]
-    SD --> WD["worker-deletes<br/>stateless, N pods"]
-    WD -. write tombstone .-> KV
-    WP -. "check (on match)" .-> KV
-    WP & WL --> N["Notifier (log today)"]
-    MON[monitor] -. lag, limits .-> NATS
-    MON --> N
+    subgraph P2["likes path"]
+        SL[("LIKES stream")] --> WL["worker-likes<br/>stateful, 1 pod"]
+    end
+    subgraph P3["deletes path"]
+        SD[("DELETES stream")] --> WD["worker-deletes<br/>stateless, N pods"]
+    end
+
+    ING -->|bsky.post.create| SP
+    ING -->|"bsky.like / repost.create"| SL
+    ING -->|bsky.delete| SD
+
+    WP --> N["Notifier<br/>(log today)"]
+    WL --> N
+    WD -. write tombstone .-> KV[("NATS KV<br/>cursor, tombstones")]
+    WP -. check on match .-> KV
+    MON["monitor<br/>watches every path"] --> N
 ```
 
 - **Ingester:** holds the single Jetstream connection, reads only `kind`, `commit.collection` and
   `commit.operation`, looks them up in the routing table, and publishes the original event to the matching NATS
   subject. It never talks to workers.
-- **NATS JetStream:** one durable stream per path, plus a KV store for the resume cursor and tombstones.
+- **NATS JetStream:** one durable stream per path (each lane above), plus a KV store for the resume cursor and
+  tombstones, and a dead-letter stream (`DLQ`).
 - **Workers:** one Kubernetes Deployment per path, each reading only its own stream through one durable pull
   consumer shared by its replicas. All workers share one loop (fetch → handle → ack, retry, dead-letter); a path
   only implements `Handle(ctx, event) error`.
