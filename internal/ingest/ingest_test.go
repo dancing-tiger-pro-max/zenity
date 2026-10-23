@@ -23,7 +23,8 @@ import (
 
 // Regression test for a freeze found live: with NATS gone, async publishes
 // never resolved and the ingester hung silently, ignoring shutdown. It must
-// instead fail within the publish timeout, so it can resume from its cursor.
+// instead fail the session within the publish timeout, so Run reconnects from
+// its cursor.
 //
 // The feed is slow on purpose: with fewer unconfirmed publishes than the
 // max-pending cap, the client's own stall guard never fires, so only the
@@ -56,7 +57,7 @@ func TestIngesterFailsFastWhenNATSDies(t *testing.T) {
 		Log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	result := make(chan error, 1)
-	go func() { result <- in.Run(context.Background()) }()
+	go func() { result <- in.session(context.Background(), 0) }()
 
 	waitFor(t, 5*time.Second, "events confirmed before NATS dies", func() bool { return in.ConfirmedUS() > 0 })
 

@@ -101,7 +101,8 @@ and deletes stay at zero.
 
 At-least-once, end to end.
 - **Ingest:** async publish with at most 256 unconfirmed messages in flight. Live traffic is ~500/s but catch-up
-  after an outage replays at ~2.7k/s, and waiting on each ack caps out near 2k/s. The **cursor** (last `time_us` whose
+  after an outage replays as fast as we can take it (measured: ~62k events/s through our ingester), and waiting on
+  each ack caps out near 2k/s. The **cursor** (last `time_us` whose
   every earlier event is confirmed stored) is written to NATS KV every ~1s and on shutdown. It fails together with
   the broker, so the two can never disagree. If NATS is down, a publish not confirmed within `publish_timeout`
   stops the ingester, which resumes from the cursor; Jetstream's ~36h history is the buffer. An event over NATS's

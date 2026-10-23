@@ -62,11 +62,14 @@ func run(role, configPath string, dryRun bool, log *slog.Logger) error {
 
 func runIngester(ctx context.Context, cfg config.Config, dryRun bool, log *slog.Logger) error {
 	in := &ingest.Ingester{
-		URL:        cfg.Jetstream.URL,
-		Routes:     router.Table,
-		MaxPending: cfg.Jetstream.MaxPending,
-		DryRun:     dryRun,
-		Log:        log,
+		URL:            cfg.Jetstream.URL,
+		Routes:         router.Table,
+		MaxPending:     cfg.Jetstream.MaxPending,
+		CursorInterval: cfg.Jetstream.CursorInterval,
+		Backoff:        cfg.Jetstream.ReconnectBackoff,
+		GapThreshold:   cfg.Jetstream.GapThreshold,
+		DryRun:         dryRun,
+		Log:            log,
 	}
 	if !dryRun {
 		nc, js, err := broker.ConnectPublisher(cfg.NATS.URL, cfg.Jetstream.MaxPending, cfg.Jetstream.PublishTimeout)
@@ -78,6 +81,11 @@ func runIngester(ctx context.Context, cfg config.Config, dryRun bool, log *slog.
 			return err
 		}
 		in.JS = js
+		cursor, err := broker.NewCursorStore(ctx, js, "ingester")
+		if err != nil {
+			return err
+		}
+		in.Cursor = cursor
 	}
 	return in.Run(ctx)
 }

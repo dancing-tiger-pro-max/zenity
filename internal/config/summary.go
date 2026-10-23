@@ -12,6 +12,7 @@ func (c Config) Summary() string {
 
 	p("config OK")
 	p("  jetstream  %s (cursor every %s, max %d in flight, publish timeout %s)", c.Jetstream.URL, c.Jetstream.CursorInterval, c.Jetstream.MaxPending, c.Jetstream.PublishTimeout)
+	p("             reconnect backoff %v, gap threshold %s", c.Jetstream.ReconnectBackoff, c.Jetstream.GapThreshold)
 	p("  nats       %s", c.NATS.URL)
 	p("  streams    dedupe window %s", c.Streams.DuplicatesWindow)
 	for _, s := range []struct {

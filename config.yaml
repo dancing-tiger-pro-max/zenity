@@ -5,7 +5,9 @@ jetstream:
   url: wss://jetstream2.us-east.bsky.network/subscribe
   cursor_interval: 1s # how often the resume cursor is saved
   max_pending: 256 # unconfirmed publishes in flight before the ingester pauses
-  publish_timeout: 10s # NATS must confirm a publish within this, or the ingester stops and resumes from the cursor
+  publish_timeout: 10s # NATS must confirm a publish within this, or the ingester reconnects from the cursor
+  reconnect_backoff: [1s, 2s, 5s, 10s, 30s] # waits between reconnect attempts (last value repeats)
+  gap_threshold: 30s # on resume, a first event further than this past the cursor is logged as a gap
 
 nats:
   url: nats://localhost:4222
