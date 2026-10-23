@@ -10,13 +10,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"bskyrouter/internal/broker"
 	"bskyrouter/internal/config"
 	"bskyrouter/internal/ingest"
 	"bskyrouter/internal/router"
 )
 
 func main() {
-	role := flag.String("role", "", "ingester")
+	role := flag.String("role", "", "setup | ingester")
 	configPath := flag.String("config", "config.yaml", "path to config.yaml")
 	dryRun := flag.Bool("dry-run", false, "ingester: route and count events without publishing")
 	checkConfig := flag.Bool("check-config", false, "load and validate the config, print it, and exit")
@@ -50,6 +51,8 @@ func run(role, configPath string, dryRun bool, log *slog.Logger) error {
 	defer stop()
 
 	switch role {
+	case "setup":
+		return setup(ctx, cfg, log)
 	case "ingester":
 		if !dryRun {
 			return fmt.Errorf("publishing to NATS isn't built yet; run with --dry-run")
@@ -59,4 +62,19 @@ func run(role, configPath string, dryRun bool, log *slog.Logger) error {
 	default:
 		return fmt.Errorf("unknown --role %q", role)
 	}
+}
+
+// setup creates the streams and KV buckets and exits. Every role also does
+// this at startup; this role exists to do it on its own.
+func setup(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	nc, js, err := broker.Connect(cfg.NATS.URL, "setup")
+	if err != nil {
+		return err
+	}
+	defer nc.Close()
+	if err := broker.Ensure(ctx, js, cfg); err != nil {
+		return err
+	}
+	log.Info("streams and buckets ready", "nats", cfg.NATS.URL)
+	return nil
 }
