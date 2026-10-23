@@ -94,8 +94,9 @@ What keeps loss rare and visible:
 - On a laptop `MaxBytes` sets the buffer: measured ~5h for posts (1GB), ~2.4h for likes (2GB), ~13h for deletes;
   24h is the production target (the full firehose is ~28GB/day).
 
-The slow-path demo: set `process_delay` on likes and only LIKES' lag grows (`nats consumer report`) while posts
-and deletes stay at zero.
+The slow-path demo (measured): with `process_delay: 50ms` on likes, the LIKES backlog grew 0 → 21k in 60s while POSTS
+and DELETES stayed at 0 and the ingester never noticed. Back to 0 delay, it rebuilt its counts in ~0.1s, drained
+the backlog at ~2.5k/s and was live again within 10s, with nothing lost.
 
 ## 5. Delivery guarantees
 
