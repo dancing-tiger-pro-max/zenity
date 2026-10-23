@@ -1,2 +1,41 @@
+# The single source of settings. Mounted into every pod as a ConfigMap.
+# Changes apply on restart of the affected role.
+
 jetstream:
   url: wss://jetstream2.us-east.bsky.network/subscribe
+  cursor_interval: 1s # how often the resume cursor is saved
+  max_pending: 256 # unconfirmed publishes in flight before the ingester pauses
+
+nats:
+  url: nats://localhost:4222
+
+streams:
+  duplicates_window: 2m # NATS drops a repeated message ID within this window
+  posts: { max_age: 24h, max_bytes: 1GB }
+  likes: { max_age: 24h, max_bytes: 2GB }
+  deletes: { max_age: 24h, max_bytes: 256MB }
+  dlq: { max_age: 168h, max_bytes: 256MB }
+
+workers:
+  ack_wait: 30s # unacked messages are redelivered after this
+  max_deliver: 5 # attempts before a message goes to the DLQ
+  backoff: [1s, 5s, 30s] # delay before each retry (last value repeats)
+
+  posts:
+    process_delay: 0s # slow-path demo: sleep per message
+    keywords: [golang, kubernetes, nats]
+    languages: [en]
+
+  likes:
+    process_delay: 0s
+    window: 1m # rolling window, in event time
+    threshold: 20 # likes + reposts on one post within the window
+
+  deletes:
+    process_delay: 0s
+    tombstone_ttl: 24h # must be >= streams.posts.max_age
+
+monitor:
+  interval: 5s
+  full_ratio: 0.9 # a stream is "near its limit" at 90% of max_bytes or max_age
+  backlog_ratio: 0.8 # warn when 80% of a near-full stream is unprocessed

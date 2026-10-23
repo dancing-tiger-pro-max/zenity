@@ -19,7 +19,18 @@ func main() {
 	role := flag.String("role", "", "ingester")
 	configPath := flag.String("config", "config.yaml", "path to config.yaml")
 	dryRun := flag.Bool("dry-run", false, "ingester: route and count events without publishing")
+	checkConfig := flag.Bool("check-config", false, "load and validate the config, print it, and exit")
 	flag.Parse()
+
+	if *checkConfig {
+		cfg, err := config.Load(*configPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Print(cfg.Summary())
+		return
+	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("role", *role)
 
