@@ -29,7 +29,7 @@ type through NATS JetStream, and fans out to independent worker Deployments on a
 - Verify behavior against the live feed, not just assumptions: watch counters that shouldn't move.
 - A regression test must be shown to fail with the bug put back, and pass reliably with the fix.
 - Layout: `cmd/router` (one binary, `--role`), packages under `internal/` (config, event, router, ingest, broker,
-  worker, handlers, notify, monitor), manifests in `deploy/`.
+  worker, handlers, engagement, notify, monitor, natstest), manifests in `deploy/`.
 - Each path only implements `Handle(ctx, event) error`; delivery mechanics (fetch, delay, ack, retry, dead-letter)
   live once in `internal/worker`.
 - All settings live in `config.yaml`, validated at startup. No hardcoded thresholds or URLs.
