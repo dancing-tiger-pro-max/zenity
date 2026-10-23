@@ -90,7 +90,9 @@ one cursor, so one slow path would stop every path.
 What keeps loss rare and visible:
 - Streams keep processed messages (limits retention) so likes can replay. The monitor therefore warns when a stream
   is near its limit **and** ≥80% of it is unprocessed, meaning eviction is about to reach unread messages.
-- If eviction passes a consumer's position, the monitor reports `events lost: N` for that path only.
+- If eviction passes a consumer's position, the monitor reports `events lost: N` for that path only. It counts both
+  messages evicted ahead of the consumer and those its next delivery jumped over (position moved further than the
+  number of deliveries it received). Checked live against an independent count.
 - On a laptop `MaxBytes` sets the buffer: measured ~5h for posts (1GB), ~2.4h for likes (2GB), ~13h for deletes;
   24h is the production target (the full firehose is ~28GB/day).
 

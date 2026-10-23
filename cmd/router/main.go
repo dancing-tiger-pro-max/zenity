@@ -15,13 +15,14 @@ import (
 	"bskyrouter/internal/engagement"
 	"bskyrouter/internal/handlers"
 	"bskyrouter/internal/ingest"
+	"bskyrouter/internal/monitor"
 	"bskyrouter/internal/notify"
 	"bskyrouter/internal/router"
 	"bskyrouter/internal/worker"
 )
 
 func main() {
-	role := flag.String("role", "", "setup | ingester | worker")
+	role := flag.String("role", "", "setup | ingester | worker | monitor")
 	pathType := flag.String("type", "", "worker: posts | likes | deletes")
 	configPath := flag.String("config", "config.yaml", "path to config.yaml")
 	dryRun := flag.Bool("dry-run", false, "ingester: route and count events without publishing")
@@ -62,6 +63,8 @@ func run(role, pathType, configPath string, dryRun bool, log *slog.Logger) error
 		return runIngester(ctx, cfg, dryRun, log)
 	case "worker":
 		return runWorker(ctx, cfg, pathType, log.With("type", pathType))
+	case "monitor":
+		return runMonitor(ctx, cfg, log)
 	default:
 		return fmt.Errorf("unknown --role %q", role)
 	}
@@ -146,6 +149,31 @@ func runWorker(ctx context.Context, cfg config.Config, pathType string, log *slo
 		return fmt.Errorf("unknown or not yet built --type %q", pathType)
 	}
 	return w.Run(ctx)
+}
+
+func runMonitor(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	nc, js, err := broker.Connect(cfg.NATS.URL, "monitor")
+	if err != nil {
+		return err
+	}
+	defer nc.Close()
+	if err := broker.Ensure(ctx, js, cfg); err != nil {
+		return err
+	}
+	m := &monitor.Monitor{
+		JS: js,
+		Paths: []monitor.Path{
+			{Stream: broker.StreamPosts, Consumer: "posts"},
+			{Stream: broker.StreamLikes, Consumer: "likes"},
+			{Stream: broker.StreamDeletes, Consumer: "deletes"},
+		},
+		Interval:  cfg.Monitor.Interval,
+		FullRatio: cfg.Monitor.FullRatio,
+		Backlog:   cfg.Monitor.BacklogRatio,
+		Notifier:  notify.Log{Logger: log},
+		Log:       log,
+	}
+	return m.Run(ctx)
 }
 
 // setup creates the streams and KV buckets and exits. Every role also does
