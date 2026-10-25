@@ -82,7 +82,7 @@ func runIngester(ctx context.Context, cfg config.Config, dryRun bool, log *slog.
 		Log:            log,
 	}
 	if !dryRun {
-		nc, js, err := broker.ConnectPublisher(cfg.NATS.URL, cfg.Jetstream.MaxPending, cfg.Jetstream.PublishTimeout)
+		nc, js, err := broker.ConnectPublisher(ctx, cfg.NATS.URL, cfg.Jetstream.MaxPending, cfg.Jetstream.PublishTimeout, log)
 		if err != nil {
 			return err
 		}
@@ -101,7 +101,7 @@ func runIngester(ctx context.Context, cfg config.Config, dryRun bool, log *slog.
 }
 
 func runWorker(ctx context.Context, cfg config.Config, pathType string, log *slog.Logger) error {
-	nc, js, err := broker.Connect(cfg.NATS.URL, "worker-"+pathType)
+	nc, js, err := broker.Connect(ctx, cfg.NATS.URL, "worker-"+pathType, log)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func runWorker(ctx context.Context, cfg config.Config, pathType string, log *slo
 }
 
 func runMonitor(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	nc, js, err := broker.Connect(cfg.NATS.URL, "monitor")
+	nc, js, err := broker.Connect(ctx, cfg.NATS.URL, "monitor", log)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func runMonitor(ctx context.Context, cfg config.Config, log *slog.Logger) error 
 // setup creates the streams and KV buckets and exits. Every role also does
 // this at startup; this role exists to do it on its own.
 func setup(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	nc, js, err := broker.Connect(cfg.NATS.URL, "setup")
+	nc, js, err := broker.Connect(ctx, cfg.NATS.URL, "setup", log)
 	if err != nil {
 		return err
 	}

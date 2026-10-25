@@ -6,6 +6,7 @@ package broker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -28,15 +29,24 @@ const (
 	BucketTombstones = "tombstones"
 )
 
-// Connect opens a NATS connection that keeps reconnecting on its own.
-func Connect(url, name string, opts ...jetstream.JetStreamOpt) (*nats.Conn, jetstream.JetStream, error) {
+// Connect opens a NATS connection that keeps reconnecting on its own. If NATS
+// isn't reachable yet, it keeps trying until ctx ends instead of failing: on a
+// fresh cluster the Service address can take a few seconds to work after the
+// NATS pod is ready, and exiting would put the pod in Kubernetes' growing
+// restart backoff (CrashLoopBackOff), which made `make up` look stuck.
+func Connect(ctx context.Context, url, name string, log *slog.Logger, opts ...jetstream.JetStreamOpt) (*nats.Conn, jetstream.JetStream, error) {
 	nc, err := nats.Connect(url,
 		nats.Name(name),
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(time.Second),
+		nats.RetryOnFailedConnect(true),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect nats %s: %w", url, err)
+	}
+	if err := waitConnected(ctx, nc, url, log); err != nil {
+		nc.Close()
+		return nil, nil, err
 	}
 	js, err := jetstream.New(nc, opts...)
 	if err != nil {
@@ -46,11 +56,31 @@ func Connect(url, name string, opts ...jetstream.JetStreamOpt) (*nats.Conn, jets
 	return nc, js, nil
 }
 
+func waitConnected(ctx context.Context, nc *nats.Conn, url string, log *slog.Logger) error {
+	start := time.Now()
+	lastLog := start
+	for !nc.IsConnected() {
+		if time.Since(lastLog) >= 5*time.Second {
+			log.Warn("waiting for NATS", "url", url, "waited", time.Since(start).Round(time.Second).String())
+			lastLog = time.Now()
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("connect nats %s: %w", url, ctx.Err())
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	if time.Since(start) > time.Second {
+		log.Info("connected to NATS", "after", time.Since(start).Round(time.Second).String())
+	}
+	return nil
+}
+
 // ConnectPublisher connects for the ingester. The async publish timeout is
 // essential: without it, a publish to an unreachable NATS never resolves and
 // the ingester freezes silently instead of failing and resuming from its cursor.
-func ConnectPublisher(url string, maxPending int, publishTimeout time.Duration) (*nats.Conn, jetstream.JetStream, error) {
-	return Connect(url, "ingester",
+func ConnectPublisher(ctx context.Context, url string, maxPending int, publishTimeout time.Duration, log *slog.Logger) (*nats.Conn, jetstream.JetStream, error) {
+	return Connect(ctx, url, "ingester", log,
 		jetstream.WithPublishAsyncMaxPending(maxPending),
 		jetstream.WithPublishAsyncTimeout(publishTimeout))
 }

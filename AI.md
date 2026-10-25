@@ -65,6 +65,8 @@ The agent wrote these bugs; running the system live and the audit prompt caught 
 - A likes replay that read one message per request and took 44s.
 - A monitor loss count ~5× too low, caught by comparing it with an independent count.
 - A message that could get stuck forever if its dead-letter publish failed.
+- Pods that crashed once on a fresh cluster (NATS's Service address takes a few seconds to work), so Kubernetes'
+  restart backoff made `make up` look stuck. Found when I ran `make up` myself; pods now wait for NATS instead.
 - Weak evidence: a regression test that passed even with the bug present (until made deterministic), and a NATS
   counter misread as a running total. Each time, the fix was to show the check failing first.
 

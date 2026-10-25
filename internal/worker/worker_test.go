@@ -61,7 +61,7 @@ func TestDeliveryOutcomes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nc, js, err := broker.Connect(ns.ClientURL(), "test")
+	nc, js, err := broker.Connect(context.Background(), ns.ClientURL(), "test", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

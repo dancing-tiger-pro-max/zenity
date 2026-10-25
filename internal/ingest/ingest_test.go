@@ -40,7 +40,7 @@ func TestIngesterFailsFastWhenNATSDies(t *testing.T) {
 	}
 	const publishTimeout = time.Second
 	const maxPending = 10_000
-	nc, js, err := broker.ConnectPublisher(ns.ClientURL(), maxPending, publishTimeout)
+	nc, js, err := broker.ConnectPublisher(context.Background(), ns.ClientURL(), maxPending, publishTimeout, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
