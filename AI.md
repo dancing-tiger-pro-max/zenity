@@ -74,8 +74,9 @@ The agent wrote these bugs; running the system live and the audit prompt caught 
 - **Data loss:** rejected shedding likes "for the demo", and later rejected the stall-everything design that came
   from over-correcting.
 - **Exactness:** rejected an approximate engagement counter, so the window uses event time and dedupes by URI.
-- **Scaling:** rejected sharding the likes worker because it can't autoscale, and kept pushing until the
-  single-pod choice was justified by measured volume rather than convenience.
+- **Scaling:** kept pushing until the single-pod likes choice was justified by measured volume rather than
+  convenience. Later, comparing with Kafka's partitions, I proposed partitioning likes by a hash of the post as the
+  scale-out plan, replacing the agent's more complex "count inside NATS" plan.
 - **Simplicity:** rejected active-active ingesters, and a configurable list of tombstoned collections.
 - **Extensibility:** monitor warnings go through the same `Notifier` interface as alerts, so Slack can be added
   later without touching detection logic.

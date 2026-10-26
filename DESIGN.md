@@ -125,7 +125,7 @@ At-least-once, end to end.
 | Component | Scales by | Limit and next step |
 |---|---|---|
 | Posts, deletes | Adding pods (shared pull consumer) | Autoscale on lag with KEDA |
-| Likes | One pod by design | Move counting into NATS: a `LIKEWINDOW` stream copies likes per post subject with `MaxAge` = window, so a subject's message count is the rolling count; workers become stateless and autoscale |
+| Likes | One pod by design | **Hash partitions, like Kafka:** the ingester sends each like to `bsky.like.create.<hash(post) % N>`; a StatefulSet runs N likes pods (`likes-0`…), each reading only its partition and counting its posts exactly. Changing N moves posts between pods, which rebuild by replaying the window (~0.3s with a 1-minute window) |
 | Ingester | Not horizontally (one ordered source; two readers duplicate) | Large headroom. Then parallel parsing in the pod, then several ingesters each owning some collections (gives up single ingest) |
 | NATS | Fixed cluster | 3 nodes, each with its own disk, streams replicated |
 
@@ -136,7 +136,7 @@ At-least-once, end to end.
 | Fan-out | Broker + one Deployment per path | In-process goroutines/channels: queued events die with the process, paths can't fail or scale apart |
 | Broker | NATS JetStream | Kafka: too heavy locally, the choice at much higher volume. Redis Streams: routing, reclaim and retries hand-written |
 | Full stream | Evict oldest, per path | Stall the ingester: one slow path stops all |
-| Likes scale-out | One exact pod; NATS counting as plan | Shard by post: can't autoscale. Redis `INCR` per like: a call per like, hot keys. Batched KV counters: approximate |
+| Likes scale-out | One exact pod; hash partitions by post as the plan | Counting inside NATS (a per-post stream keeping one window): fully elastic, but more custom code and a count query per post per second. Redis `INCR` per like: a call per like, hot keys. Batched KV counters: approximate |
 | Cursor | NATS KV | Local file: tied to one node, can disagree with the broker |
 | Config | One YAML, applied on restart | Env vars: poor for lists. Hot reload: not worth it here |
 
